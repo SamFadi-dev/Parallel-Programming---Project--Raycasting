@@ -13,6 +13,11 @@
 #include <DoubleBuffer.h>
 #include <util.h>
 
+#include <thread>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+
 struct ProgramArguments
 {
     int screenWidth;
@@ -39,6 +44,11 @@ ProgramArguments parseArgs(int argc, char *argv[])
     return args;
 }
 
+void notifyPosition()
+{
+
+}
+
 int main(int argc, char *argv[])
 {
     ProgramArguments args = parseArgs(argc, argv);
@@ -48,21 +58,42 @@ int main(int argc, char *argv[])
     std::vector<std::unique_ptr<UDPSender>> udpSenders;
     NetworkData data = parseIPs(args.ipsPath);
     UDPReceiver udpReceiver(data.listeningPort);
+
     for (auto ipPort : data.ipPorts)
         udpSenders.push_back(std::unique_ptr<UDPSender>(new UDPSender(ipPort.first, ipPort.second)));
+
     size_t nbPlayers = udpSenders.size();
+    Map map = Map::generateMap(nbPlayers);
+
+    Player player({22, 11.5}, {-1, 0}, {0, 0.66}, 5, 3, map);
 
     // Indexes used to identify other players
     int nextPlayerIndex = 0;
     std::map<std::string, int> playersIndexes; // Maps IP addresses and ports to player indexes
 
-    Map map = Map::generateMap(nbPlayers);
-    Player player({22, 11.5}, {-1, 0}, {0, 0.66}, 5, 3, map);
     DoubleBuffer doubleBuffer(screenWidth, screenHeight);
     WindowManager windowManager(doubleBuffer);
     Raycaster raycaster(player, doubleBuffer, map);
 
     std::chrono::time_point<std::chrono::system_clock> time = std::chrono::system_clock::now(), oldTime;
+
+    std::mutex sendMutex;
+    std::condition_variable sendCondVar;
+    std::atomic<bool> running(true);
+    bool positionChanged = false;
+
+    std::thread senderThread([&]() {
+        std::unique_lock<std::mutex> lock(sendMutex);
+        while (running) {
+            sendCondVar.wait(lock, [&]() { return positionChanged || !running; });
+            if (!running) break;
+    
+            for (auto &udpSender : udpSenders)
+                udpSender->send(player.posX(), player.posY());
+    
+            positionChanged = false;
+        }
+    });
 
     Average fpsCounter(1.0);
 
@@ -87,19 +118,46 @@ int main(int argc, char *argv[])
 
         unsigned int keys = windowManager.getKeysPressed();
         if (keys & WindowManager::KEY_UP)
+        {
             player.move(frameTime);
+            
+            std::lock_guard<std::mutex> lock(sendMutex);
+            positionChanged = true;
+            sendCondVar.notify_one();
+        }
         if (keys & WindowManager::KEY_DOWN)
+        {
             player.move(-frameTime);
-        if (keys & WindowManager::KEY_RIGHT)
-            player.turn(-frameTime);
-        if (keys & WindowManager::KEY_LEFT)
-            player.turn(frameTime);
-        if (keys & WindowManager::KEY_ESC)
-            break;
 
-        // Send position to other players
-        for (auto &udpSender : udpSenders)
-            udpSender->send(player.posX(), player.posY());
+            std::lock_guard<std::mutex> lock(sendMutex);
+            positionChanged = true;
+            sendCondVar.notify_one();
+        }
+        if (keys & WindowManager::KEY_RIGHT)
+        {
+            player.turn(-frameTime);
+            
+            std::lock_guard<std::mutex> lock(sendMutex);
+            positionChanged = true;
+            sendCondVar.notify_one();
+        }
+        if (keys & WindowManager::KEY_LEFT)
+        {
+            player.turn(frameTime);
+            
+            std::lock_guard<std::mutex> lock(sendMutex);
+            positionChanged = true;
+            sendCondVar.notify_one();
+        }
+        if (keys & WindowManager::KEY_ESC)
+        {
+            running = false;
+            // Release the thread
+            sendCondVar.notify_one();
+            senderThread.join();
+
+            break;
+        }
 
         // Receive other players' positions and update them
         for (size_t i = 0; i < nbPlayers; i++)
@@ -107,6 +165,7 @@ int main(int argc, char *argv[])
             UDPData data = udpReceiver.receive();
             if (!data.valid)
                 break;
+
             // Update the player's index if it is the first time we receive data from them
             if (playersIndexes.find(data.sender) == playersIndexes.end())
             {
