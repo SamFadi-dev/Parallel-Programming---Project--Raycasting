@@ -2,6 +2,8 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <thread>
+#include <atomic>
 
 #include <Average.h>
 #include <Player.h>
@@ -66,6 +68,17 @@ int main(int argc, char *argv[])
 
     Average fpsCounter(1.0);
 
+    std::atomic<bool> running(true);
+    std::atomic<unsigned int> sharedKeys(0);
+
+    std::thread uiThread([&]() {
+        while (running) {
+            windowManager.updateDisplay();
+            windowManager.updateInput();
+            sharedKeys.store(windowManager.getKeysPressed());
+        }
+    });
+
     while (true)
     {
         raycaster.castFloorCeiling();
@@ -82,20 +95,17 @@ int main(int argc, char *argv[])
         fpsCounter.update(1.0 / frameTime);
         std::cout << "\r" << std::to_string(int(fpsCounter.get())) << " FPS" << std::flush;
 
-        windowManager.updateDisplay();
-        windowManager.updateInput();
+        unsigned int keys = sharedKeys.load();
+        if (keys & WindowManager::KEY_UP)      player.move(frameTime);
+        if (keys & WindowManager::KEY_DOWN)    player.move(-frameTime);
+        if (keys & WindowManager::KEY_RIGHT)   player.turn(-frameTime);
+        if (keys & WindowManager::KEY_LEFT)    player.turn(frameTime);
 
-        unsigned int keys = windowManager.getKeysPressed();
-        if (keys & WindowManager::KEY_UP)
-            player.move(frameTime);
-        if (keys & WindowManager::KEY_DOWN)
-            player.move(-frameTime);
-        if (keys & WindowManager::KEY_RIGHT)
-            player.turn(-frameTime);
-        if (keys & WindowManager::KEY_LEFT)
-            player.turn(frameTime);
-        if (keys & WindowManager::KEY_ESC)
+        if (keys & WindowManager::KEY_ESC) {
+            running = false;
+            uiThread.join();
             break;
+        }
 
         // Send position to other players
         for (auto &udpSender : udpSenders)
