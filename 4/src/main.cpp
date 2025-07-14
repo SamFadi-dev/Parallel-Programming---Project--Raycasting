@@ -81,6 +81,7 @@ int main(int argc, char *argv[])
     std::condition_variable sendCondVar;
     std::atomic<bool> running(true);
     bool positionChanged = false;
+    std::mutex playerMutex;
 
     std::thread senderThread([&]() {
         std::unique_lock<std::mutex> lock(sendMutex);
@@ -88,8 +89,11 @@ int main(int argc, char *argv[])
             sendCondVar.wait(lock, [&]() { return positionChanged || !running; });
             if (!running) break;
     
-            for (auto &udpSender : udpSenders)
-                udpSender->send(player.posX(), player.posY());
+            {
+                std::lock_guard<std::mutex> lock(playerMutex);
+                for (auto &udpSender : udpSenders)
+                    udpSender->send(player.posX(), player.posY());
+            }            
     
             positionChanged = false;
         }
@@ -119,15 +123,20 @@ int main(int argc, char *argv[])
         unsigned int keys = windowManager.getKeysPressed();
         if (keys & WindowManager::KEY_UP)
         {
-            player.move(frameTime);
-            
+            {
+                std::lock_guard<std::mutex> lock(playerMutex);
+                player.move(frameTime);
+            }
             std::lock_guard<std::mutex> lock(sendMutex);
             positionChanged = true;
             sendCondVar.notify_one();
         }
         if (keys & WindowManager::KEY_DOWN)
         {
-            player.move(-frameTime);
+            {
+                std::lock_guard<std::mutex> lock(playerMutex);
+                player.move(-frameTime);
+            }
 
             std::lock_guard<std::mutex> lock(sendMutex);
             positionChanged = true;
@@ -135,7 +144,10 @@ int main(int argc, char *argv[])
         }
         if (keys & WindowManager::KEY_RIGHT)
         {
-            player.turn(-frameTime);
+            {
+                std::lock_guard<std::mutex> lock(playerMutex);
+                player.turn(-frameTime);
+            }
             
             std::lock_guard<std::mutex> lock(sendMutex);
             positionChanged = true;
@@ -143,7 +155,10 @@ int main(int argc, char *argv[])
         }
         if (keys & WindowManager::KEY_LEFT)
         {
-            player.turn(frameTime);
+            {
+                std::lock_guard<std::mutex> lock(playerMutex);
+                player.turn(frameTime);
+            }
             
             std::lock_guard<std::mutex> lock(sendMutex);
             positionChanged = true;
@@ -151,9 +166,12 @@ int main(int argc, char *argv[])
         }
         if (keys & WindowManager::KEY_ESC)
         {
-            running = false;
-            // Release the thread
-            sendCondVar.notify_one();
+            // Must have added a lock here to ensure that the sender thread is stopped before joining it
+            {
+                std::lock_guard<std::mutex> lock(sendMutex);
+                running = false;
+                sendCondVar.notify_one();
+            }
             senderThread.join();
 
             break;

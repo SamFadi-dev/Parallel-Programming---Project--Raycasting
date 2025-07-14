@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <algorithm>
+#include <omp.h>
 
 #include <Raycaster.h>
 
@@ -23,7 +24,7 @@ Raycaster::Raycaster(Player &player, DoubleBuffer &doubleBuffer, Map &map) : pla
 
 void Raycaster::castFloorCeiling()
 {
-    #pragma omp parallel num_threads(4)
+    #pragma omp parallel
     {
         Vector<double> rayDir0 = {0, 0}, rayDir1 = {0, 0};
         // Vertical position of the camera.
@@ -82,7 +83,7 @@ void Raycaster::castFloorCeiling()
 
 void Raycaster::castWalls()
 {
-    #pragma omp parallel num_threads(4)
+    #pragma omp parallel
     {
         #pragma omp for
         for (int x = 0; x < screenWidth; x++)
@@ -207,25 +208,26 @@ void Raycaster::castWalls()
 
 void Raycaster::castSprites()
 {
-    #pragma omp parallel num_threads(4)
+    std::vector<Sprite> sprites = map.getSprites();
+
+    int screenWidth = doubleBuffer.getWidth();
+    int screenHeight = doubleBuffer.getHeight();
+
+    // sort sprites from far to close
+    for (int i = 0; i < numSprites; i++)
     {
-        std::vector<Sprite> sprites = map.getSprites();
+        spriteOrder[i] = i;
+        Sprite sprite = sprites[i];
+        spriteDistance[i] = pow(player.posX() - sprite.posX(), 2) + pow(player.posY() - sprite.posY(), 2); // sqrt not taken, unneeded
+    }
+    
 
-        int screenWidth = doubleBuffer.getWidth();
-        int screenHeight = doubleBuffer.getHeight();
+    // do not use OpenMP here, because the sort function is not thread safe
+    sortSprites();
 
-        // sort sprites from far to close
-        #pragma omp for
-        for (int i = 0; i < numSprites; i++)
-        {
-            spriteOrder[i] = i;
-            Sprite sprite = sprites[i];
-            spriteDistance[i] = pow(player.posX() - sprite.posX(), 2) + pow(player.posY() - sprite.posY(), 2); // sqrt not taken, unneeded
-        }
-
-        sortSprites();
-
-        // after sorting the sprites, do the projection and draw them
+    // after sorting the sprites, do the projection and draw them
+    #pragma omp parallel
+    {
         #pragma omp for
         for (int i = 0; i < numSprites; i++)
         {

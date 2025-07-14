@@ -94,7 +94,8 @@ int main(int argc, char *argv[])
 
         fpsCounter.update(1.0 / frameTime);
         std::cout << "\r" << std::to_string(int(fpsCounter.get())) << " FPS" << std::flush;
-
+        
+        // Get the key from the other thread
         unsigned int keys = sharedKeys.load();
         if (keys & WindowManager::KEY_UP)      player.move(frameTime);
         if (keys & WindowManager::KEY_DOWN)    player.move(-frameTime);

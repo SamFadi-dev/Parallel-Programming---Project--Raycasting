@@ -1,10 +1,10 @@
 #include <DoubleBuffer.h>
+#include <mutex>
 
 DoubleBuffer::DoubleBuffer(int width, int height) : width(width), height(height), frontBuffer(width * height), backBuffer(width * height)
 {
 }
 
-const std::vector<int> &DoubleBuffer::getBackBuffer() const { return backBuffer; }
 int DoubleBuffer::getWidth() const { return width; }
 int DoubleBuffer::getHeight() const { return height; }
 
@@ -24,10 +24,12 @@ void DoubleBuffer::drawVertLine(int x, int yStart, int yEnd, int lineHeight, Tex
 
 void DoubleBuffer::drawPixel(int x, int y, unsigned int color)
 {
+    std::lock_guard<std::mutex> lock(mutex);
     frontBuffer[x + y * width] = color;
 }
 
 void DoubleBuffer::swap()
 {
+    std::lock_guard<std::mutex> lock(mutex);
     frontBuffer.swap(backBuffer);
 }

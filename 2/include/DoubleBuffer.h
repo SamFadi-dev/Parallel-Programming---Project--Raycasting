@@ -2,8 +2,10 @@
 #define DOUBLEBUFFER_H
 
 #include <vector>
+#include <thread>
 
 #include <Texture.h>
+#include <mutex>
 
 /**
  * @brief The DoubleBuffer class represents a double buffer which can be used to draw to a window.
@@ -22,13 +24,6 @@ public:
      * @param height The height of the buffer.
      */
     DoubleBuffer(int width, int height);
-
-    /**
-     * @brief Returns the back buffer.
-     *
-     * @return The back buffer.
-     */
-    const std::vector<int> &getBackBuffer() const;
 
     /**
      * @brief Gets the width of the window.
@@ -71,11 +66,23 @@ public:
      */
     void swap();
 
+    /**
+     * @brief Gets a copy of the back buffer. Thread-safe. 
+     *
+     * @return A copy of the back buffer.
+     */
+    std::vector<int> getBackBufferCopy() 
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        return backBuffer;
+    }
+
 private:
     int width;
     int height;
     std::vector<int> frontBuffer;
     std::vector<int> backBuffer;
+    mutable std::mutex mutex;
 };
 
 #endif

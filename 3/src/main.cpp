@@ -93,7 +93,10 @@ int main(int argc, char *argv[])
     {
         raycaster.castFloorCeiling();
         raycaster.castWalls();
-        raycaster.castSprites();
+        {
+            std::lock_guard<std::mutex> lock(playersMutex);
+            raycaster.castSprites();
+        }
 
         doubleBuffer.swap();
 

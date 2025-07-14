@@ -5,6 +5,7 @@
 
 #include <Texture.h>
 #include <Sprite.h>
+#include <mutex>
 
 /**
  * @brief Represents a game map.

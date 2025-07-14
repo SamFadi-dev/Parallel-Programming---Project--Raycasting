@@ -61,8 +61,8 @@ unsigned int WindowManager::getKeysPressed() { return keysPressed; }
 
 void WindowManager::updateDisplay()
 {
-    const std::vector<int> &backBuffer = doubleBuffer.getBackBuffer();
-    std::copy(backBuffer.begin(), backBuffer.end(), imgBuffer);
+    auto bufferCopy = doubleBuffer.getBackBufferCopy();
+    std::copy(bufferCopy.begin(), bufferCopy.end(), imgBuffer);
 
     XPutImage(display, window, gc, img, 0, 0, 0, 0, width, height);
 }
